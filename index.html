@@ -5,8 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Perfect Reply - Reset Password</title>
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+    <!-- Import Supabase library directly with version -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4/dist/umd/supabase.min.js"></script>
 </head>
 
 <body class="bg-gray-100 h-screen flex items-center justify-center">
@@ -18,6 +20,10 @@
 
         <div id="loading" class="text-center py-4">
             <p>Loading...</p>
+        </div>
+
+        <div id="debug" class="text-xs text-gray-500 mt-2 hidden">
+            <pre id="debug-content" class="whitespace-pre-wrap"></pre>
         </div>
 
         <form id="reset-form" class="space-y-4 hidden">
@@ -55,10 +61,24 @@
     </div>
 
     <script>
-        // Initialize Supabase client
-        const supabaseUrl = 'https://ewqpcqidsiuvgngmshkp.supabase.co';
-        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3cXBjcWlkc2l1dmduZ21zaGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgzMjI4MzYsImV4cCI6MjA1Mzg5ODgzNn0.Cez1IW5b1BYQZLeZDzcBvECsju5niSg-mku03UnvkIo';
-        const supabase = supabase.createClient(supabaseUrl, supabaseAnonKey);
+        // Toggle debug mode
+        const showDebug = false;
+
+        // Debug logging function
+        function debug(message, data) {
+            if (showDebug) {
+                const debugEl = document.getElementById('debug');
+                const debugContentEl = document.getElementById('debug-content');
+
+                debugEl.classList.remove('hidden');
+
+                let content = debugContentEl.textContent;
+                content += message + (data ? ': ' + JSON.stringify(data, null, 2) : '') + '\n';
+                debugContentEl.textContent = content;
+
+                console.log(message, data);
+            }
+        }
 
         // DOM elements
         const loadingEl = document.getElementById('loading');
@@ -67,106 +87,154 @@
         const successEl = document.getElementById('success');
         const errorMessageEl = document.getElementById('error-message');
 
-        // Parse URL hash for tokens
-        function parseHash() {
-            const hash = window.location.hash.substring(1);
-            const params = new URLSearchParams(hash);
+        try {
+            debug('Script started');
 
-            console.log('URL hash:', hash);
+            // Initialize Supabase client
+            const supabaseUrl = 'https://ewqpcqidsiuvgngmshkp.supabase.co';
+            const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3cXBjcWlkc2l1dmduZ21zaGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzgzMjI4MzYsImV4cCI6MjA1Mzg5ODgzNn0.Cez1IW5b1BYQZLeZDzcBvECsju5niSg-mku03UnvkIo';
 
-            return {
-                accessToken: params.get('access_token'),
-                refreshToken: params.get('refresh_token'),
-                type: params.get('type')
-            };
-        }
+            debug('Creating Supabase client');
+            const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+            debug('Supabase client created');
 
-        // Check if we have a valid recovery token
-        async function checkRecoveryToken() {
-            const { accessToken, type } = parseHash();
+            // Parse URL hash for tokens
+            function parseHash() {
+                const hash = window.location.hash.substring(1);
+                debug('URL hash', hash.substring(0, 20) + '...'); // Only show beginning of hash for security
 
-            console.log('Token check:', { accessToken: !!accessToken, type });
+                const params = new URLSearchParams(hash);
 
-            // LOCAL TESTING MODE: If running on localhost, show the form anyway
-            const isLocalTesting = window.location.hostname === 'localhost' ||
-                window.location.hostname === '127.0.0.1';
+                return {
+                    accessToken: params.get('access_token'),
+                    refreshToken: params.get('refresh_token'),
+                    type: params.get('type')
+                };
+            }
 
-            if ((type === 'recovery' && accessToken) || isLocalTesting) {
-                console.log('Showing reset form');
-                loadingEl.classList.add('hidden');
-                resetFormEl.classList.remove('hidden');
+            // Check if we have a valid recovery token
+            async function checkRecoveryToken() {
+                try {
+                    const params = parseHash();
+                    debug('Parsed hash params', {
+                        hasAccessToken: !!params.accessToken,
+                        type: params.type
+                    });
 
-                // For local testing, show a notice
-                if (isLocalTesting && !accessToken) {
-                    errorMessageEl.textContent = 'LOCAL TESTING MODE: Password changes will not work without a valid token';
-                    errorMessageEl.classList.remove('hidden');
+                    // For easier local testing
+                    const isLocalTesting = window.location.hostname === 'localhost' ||
+                        window.location.hostname === '127.0.0.1';
+
+                    if ((params.type === 'recovery' && params.accessToken) || isLocalTesting) {
+                        debug('Token validation passed, showing reset form');
+                        loadingEl.classList.add('hidden');
+                        resetFormEl.classList.remove('hidden');
+
+                        // For local testing, show a notice
+                        if (isLocalTesting && !params.accessToken) {
+                            errorMessageEl.textContent = 'LOCAL TESTING MODE: Password changes will not work without a valid token';
+                            errorMessageEl.classList.remove('hidden');
+                        }
+                    } else {
+                        debug('Token validation failed, showing error');
+                        loadingEl.classList.add('hidden');
+                        errorEl.classList.remove('hidden');
+                    }
+                } catch (err) {
+                    debug('Error in checkRecoveryToken', err);
+                    loadingEl.classList.add('hidden');
+                    errorEl.classList.remove('hidden');
                 }
-            } else {
-                console.log('Invalid token, showing error');
-                loadingEl.classList.add('hidden');
-                errorEl.classList.remove('hidden');
-            }
-        }
-
-        // Handle password reset form submission
-        async function handleResetSubmit(e) {
-            e.preventDefault();
-
-            const password = document.getElementById('password').value;
-            const confirmPassword = document.getElementById('confirm-password').value;
-
-            // Validate passwords
-            if (password !== confirmPassword) {
-                errorMessageEl.textContent = 'Passwords do not match';
-                errorMessageEl.classList.remove('hidden');
-                return;
             }
 
-            if (password.length < 6) {
-                errorMessageEl.textContent = 'Password must be at least 6 characters';
-                errorMessageEl.classList.remove('hidden');
-                return;
-            }
+            // Handle password reset form submission
+            async function handleResetSubmit(e) {
+                e.preventDefault();
+                debug('Form submitted');
 
-            errorMessageEl.classList.add('hidden');
+                const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirm-password').value;
 
-            try {
-                const { accessToken } = parseHash();
-
-                // For local testing without a token
-                if (!accessToken) {
-                    console.log('Local testing - no valid token available');
-                    errorMessageEl.textContent = 'Local testing: No valid token available to reset password';
+                // Validate passwords
+                if (password !== confirmPassword) {
+                    errorMessageEl.textContent = 'Passwords do not match';
                     errorMessageEl.classList.remove('hidden');
                     return;
                 }
 
-                console.log('Attempting to update password with token');
+                if (password.length < 6) {
+                    errorMessageEl.textContent = 'Password must be at least 6 characters';
+                    errorMessageEl.classList.remove('hidden');
+                    return;
+                }
 
-                // Update the user's password
-                const { error } = await supabase.auth.updateUser(
-                    { password: password },
-                    { accessToken: accessToken }
-                );
+                errorMessageEl.classList.add('hidden');
 
-                if (error) throw error;
+                try {
+                    const { accessToken } = parseHash();
 
-                console.log('Password updated successfully');
+                    if (!accessToken) {
+                        debug('No valid token available');
+                        errorMessageEl.textContent = 'No valid token available to reset password';
+                        errorMessageEl.classList.remove('hidden');
+                        return;
+                    }
 
-                // Show success message
-                resetFormEl.classList.add('hidden');
-                successEl.classList.remove('hidden');
-            } catch (err) {
-                console.error('Password update error:', err);
-                errorMessageEl.textContent = err.message || 'Failed to update password';
-                errorMessageEl.classList.remove('hidden');
+                    debug('Attempting to update password');
+
+                    // Update the user's password
+                    const { error } = await supabase.auth.updateUser(
+                        { password: password },
+                        { accessToken: accessToken }
+                    );
+
+                    if (error) {
+                        debug('Password update error', error);
+                        throw error;
+                    }
+
+                    debug('Password updated successfully');
+
+                    // Show success message
+                    resetFormEl.classList.add('hidden');
+                    successEl.classList.remove('hidden');
+                } catch (err) {
+                    debug('Error in handleResetSubmit', err);
+                    errorMessageEl.textContent = err.message || 'Failed to update password';
+                    errorMessageEl.classList.remove('hidden');
+                }
             }
+
+            // Initialize page
+            debug('Setting up event listeners');
+            document.addEventListener('DOMContentLoaded', function () {
+                debug('DOM content loaded, checking recovery token');
+                checkRecoveryToken();
+                resetFormEl.addEventListener('submit', handleResetSubmit);
+            });
+
+            // Also check on script load in case DOMContentLoaded already fired
+            if (document.readyState === 'loading') {
+                debug('Document still loading, waiting for DOMContentLoaded');
+            } else {
+                debug('Document already loaded, checking recovery token immediately');
+                checkRecoveryToken();
+                resetFormEl.addEventListener('submit', handleResetSubmit);
+            }
+        } catch (err) {
+            console.error('Fatal error:', err);
+            if (showDebug) {
+                const debugEl = document.getElementById('debug');
+                const debugContentEl = document.getElementById('debug-content');
+
+                debugEl.classList.remove('hidden');
+                debugContentEl.textContent = 'FATAL ERROR: ' + err.message;
+            }
+
+            // Show error UI
+            loadingEl.classList.add('hidden');
+            errorEl.classList.remove('hidden');
         }
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('Page initialized, checking for recovery token');
-            checkRecoveryToken();
-            resetFormEl.addEventListener('submit', handleResetSubmit);
-        });
     </script>
 </body>
 
