@@ -6,9 +6,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Perfect Reply - Reset Password</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-
-    <!-- Import Supabase library directly with version -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.4/dist/umd/supabase.min.js"></script>
+
+    <!-- Immediately store the hash parameters -->
+    <script>
+        // Store hash parameters as soon as possible
+        var initialHash = location.hash;
+        var storedParams = null;
+
+        if (initialHash && initialHash.length > 1) {
+            try {
+                const hash = initialHash.substring(1);
+                const params = new URLSearchParams(hash);
+
+                storedParams = {
+                    accessToken: params.get('access_token'),
+                    refreshToken: params.get('refresh_token'),
+                    type: params.get('type')
+                };
+
+                console.log('Captured token parameters on page load');
+
+                // Store in sessionStorage as backup
+                if (storedParams.accessToken) {
+                    sessionStorage.setItem('resetAccessToken', storedParams.accessToken);
+                    sessionStorage.setItem('resetTokenType', storedParams.type || '');
+                }
+            } catch (e) {
+                console.error('Error parsing initial hash:', e);
+            }
+        }
+    </script>
 </head>
 
 <body class="bg-gray-100 h-screen flex items-center justify-center">
@@ -62,7 +90,7 @@
 
     <script>
         // Toggle debug mode
-        const showDebug = false;
+        const showDebug = true;
 
         // Debug logging function
         function debug(message, data) {
@@ -98,10 +126,29 @@
             const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
             debug('Supabase client created');
 
-            // Parse URL hash for tokens
-            function parseHash() {
+            // Use stored parameters or try to parse from current URL
+            function getTokenParams() {
+                // First check if we have stored params from page load
+                if (storedParams && storedParams.accessToken) {
+                    debug('Using stored params from page load');
+                    return storedParams;
+                }
+
+                // Then check sessionStorage backup
+                const storedToken = sessionStorage.getItem('resetAccessToken');
+                const storedType = sessionStorage.getItem('resetTokenType');
+
+                if (storedToken) {
+                    debug('Using token from sessionStorage');
+                    return {
+                        accessToken: storedToken,
+                        type: storedType
+                    };
+                }
+
+                // Finally, try current URL hash
                 const hash = window.location.hash.substring(1);
-                debug('URL hash', hash.substring(0, 20) + '...'); // Only show beginning of hash for security
+                debug('Current URL hash', hash.substring(0, 20) + '...');
 
                 const params = new URLSearchParams(hash);
 
@@ -115,10 +162,11 @@
             // Check if we have a valid recovery token
             async function checkRecoveryToken() {
                 try {
-                    const params = parseHash();
-                    debug('Parsed hash params', {
+                    const params = getTokenParams();
+                    debug('Token params', {
                         hasAccessToken: !!params.accessToken,
-                        type: params.type
+                        type: params.type,
+                        source: storedParams ? 'stored' : (sessionStorage.getItem('resetAccessToken') ? 'session' : 'current')
                     });
 
                     // For easier local testing
@@ -171,9 +219,9 @@
                 errorMessageEl.classList.add('hidden');
 
                 try {
-                    const { accessToken } = parseHash();
+                    const params = getTokenParams();
 
-                    if (!accessToken) {
+                    if (!params.accessToken) {
                         debug('No valid token available');
                         errorMessageEl.textContent = 'No valid token available to reset password';
                         errorMessageEl.classList.remove('hidden');
@@ -185,7 +233,7 @@
                     // Update the user's password
                     const { error } = await supabase.auth.updateUser(
                         { password: password },
-                        { accessToken: accessToken }
+                        { accessToken: params.accessToken }
                     );
 
                     if (error) {
@@ -194,6 +242,10 @@
                     }
 
                     debug('Password updated successfully');
+
+                    // Clear stored token
+                    sessionStorage.removeItem('resetAccessToken');
+                    sessionStorage.removeItem('resetTokenType');
 
                     // Show success message
                     resetFormEl.classList.add('hidden');
